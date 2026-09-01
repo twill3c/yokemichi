@@ -24,3 +24,11 @@ export const WORLD: WorldConfig = {
 export function insideWorld(p: Vec2): boolean {
   return p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
 }
+
+/** 点を世界の矩形へ押し込む(F-02)。 */
+export function clampToWorld(p: Vec2): Vec2 {
+  return {
+    x: Math.min(1, Math.max(0, p.x)),
+    y: Math.min(1, Math.max(0, p.y)),
+  };
+}
