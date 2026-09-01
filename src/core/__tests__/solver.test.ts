@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import { minApproachDuringTick } from "@/core/collide";
-import { gridPoint, gridSpacing, reachableOffsets, solve, validatePath } from "@/core/solver";
+import {
+  gridPoint,
+  gridSpacing,
+  reachableOffsets,
+  solve,
+  solveExact,
+  validatePath,
+} from "@/core/solver";
 import type { Bullet, Vec2, WorldConfig } from "@/core/types";
 import { dist } from "@/core/vec";
 import { WORLD } from "@/core/world";
@@ -20,6 +27,15 @@ function testCfg(over: Partial<WorldConfig> = {}): WorldConfig {
 }
 
 const BUDGET = 50_000_000;
+
+/**
+ * ソルバーの振る舞いは**両実装に同じ規格を課す**。
+ * 参照実装(素朴版)をテスト専用にすると、ずれても誰も気づかない(HC-065)。
+ */
+const IMPLS = [
+  ["exact", solveExact],
+  ["fast", solve],
+] as const;
 
 describe("T-002(F-07a): 格子と速度の整合", () => {
   it("本番の WORLD で、静止以外の遷移が実在する(8 近傍 + 静止 = 9)", () => {
@@ -48,7 +64,7 @@ describe("T-002(F-07a): 格子と速度の整合", () => {
   });
 });
 
-describe("T-030(F-07): 素通しの面", () => {
+describe.each(IMPLS)("T-030(F-07): 素通しの面 [%s]", (_n, solve) => {
   it("弾がなければ解け、経路は T+1 点で、始点は指定の開始点", () => {
     const c = testCfg();
     const start = gridPoint(10, 10, c); // (0.5, 0.5)
@@ -61,7 +77,7 @@ describe("T-030(F-07): 素通しの面", () => {
   });
 });
 
-describe("T-030b(F-07, HC-075): 開始点の仮定はその場で例外にする", () => {
+describe.each(IMPLS)("T-030b(F-07, HC-075): 開始点の仮定はその場で例外にする [%s]", (_n, solve) => {
   const c = testCfg();
 
   it("世界の外から始めようとしたら落ちる", () => {
@@ -75,7 +91,7 @@ describe("T-030b(F-07, HC-075): 開始点の仮定はその場で例外にする
   });
 });
 
-describe("T-031(F-07): 陽性対照 — 全域が危険になる瞬間", () => {
+describe.each(IMPLS)("T-031(F-07): 陽性対照 — 全域が危険になる瞬間 [%s]", (_n, solve) => {
   // 弾を格子状に敷き詰めて、世界のどこにも安全な点が無い tick を作る。
   // 生存が目的の面なので、「壁」は通せんぼでは足りない ——
   // 避ける場所が一つも無くなる瞬間が要る。
@@ -124,7 +140,7 @@ describe("T-031(F-07): 陽性対照 — 全域が危険になる瞬間", () => {
   });
 });
 
-describe("T-032(F-07): 隙間が一つだけある壁", () => {
+describe.each(IMPLS)("T-032(F-07): 隙間が一つだけある壁 [%s]", (_n, solve) => {
   // 上から下りてくる弾の列。隙間は x = 0.5 の一箇所だけ。
   // 壁は世界の**外**(y < 0)まで下り切るので、最後には必ず自機より下に居る。
   //
@@ -198,7 +214,7 @@ describe("T-032(F-07): 隙間が一つだけある壁", () => {
   });
 });
 
-describe("T-033(F-07, N-02): 予算", () => {
+describe.each(IMPLS)("T-033(F-07, N-02): 予算 [%s]", (_n, solve) => {
   it("予算 0 なら即座に返り、解けないが「証明した」とは言わない", () => {
     const c = testCfg();
     const r = solve([], gridPoint(10, 10, c), c, 0);
@@ -221,7 +237,7 @@ describe("T-033(F-07, N-02): 予算", () => {
   });
 });
 
-describe("T-034(F-07, N-03): 返された経路の不変量", () => {
+describe.each(IMPLS)("T-034(F-07, N-03): 返された経路の不変量 [%s]", (_n, solve) => {
   const c = testCfg({ ticks: 40 });
   const bullets: Bullet[] = [
     { origin: { x: 0.2, y: 0.9 }, velocity: { x: 0.005, y: -0.02 }, t0: 0, t1: 1000 },

@@ -1,6 +1,6 @@
 import { minApproachToSegments } from "./collide";
-import { bulletSegmentsAt } from "./motion";
-import type { Bullet, Vec2, WorldConfig } from "./types";
+import { bulletSegment, bulletSegmentsAt, isActiveOverTick } from "./motion";
+import type { Bullet, Segment, Vec2, WorldConfig } from "./types";
 import { dist } from "./vec";
 import { insideWorld } from "./world";
 
@@ -15,10 +15,17 @@ export interface SolveResult {
   readonly solvable: boolean;
   /** 証明できた経路(長さ `ticks + 1`)。証明できなければ `null`。 */
   readonly path: readonly Vec2[] | null;
-  /** 実際に評価した辺の本数。 */
+  /** 実際に評価した辺の本数。**両実装で一致する**(評価する辺の集合と順序が同じため)。 */
   readonly edgesEvaluated: number;
+  /** 弾との比較(`closestApproach`)を呼んだ回数。枝刈りが効いているかを測る量。 */
+  readonly bulletChecks: number;
   /** 予算切れで打ち切ったか。**`solvable === false` の理由を区別するための旗**。 */
   readonly exhausted: boolean;
+}
+
+export interface SolveOptions {
+  /** 各 tick の到達集合を覗く(二実装照合で経路の途中まで比べるため)。 */
+  readonly onLayer?: (t: number, reachable: Uint8Array) => void;
 }
 
 export type PathViolation = "length" | "outside" | "step" | "clearance";
@@ -76,16 +83,124 @@ export function reachableOffsets(cfg: WorldConfig): Offset[] {
  * 実行できて生存する**(SPEC §4 の健全性論証)。逆向きの保証は無い ——
  * 格子に乗らない経路で抜けられる面を「解けない」と言うことはある(N-03)。
  */
+export function solveExact(
+  bullets: readonly Bullet[],
+  start: Vec2,
+  cfg: WorldConfig,
+  budget: number,
+  opts: SolveOptions = {},
+): SolveResult {
+  return search(start, cfg, budget, exactOracle(bullets, cfg), opts);
+}
+
+/**
+ * ソルバー(高速版・N-06)。**判定は `solveExact` と厳密に同じ**で、
+ * 明らかに遠い弾を比較から外すだけである(`prunedOracle`)。
+ *
+ * 二実装照合(T-036)が比べているのは**辺の安全判定**であって、
+ * 層の掃き出しや経路の復元ではない —— そこは両者が同じ `search` を通る。
+ * 掃き出しと復元の正しさは、両実装に同じ規格を課した T-030〜T-034 が見る。
+ */
 export function solve(
   bullets: readonly Bullet[],
   start: Vec2,
   cfg: WorldConfig,
   budget: number,
+  opts: SolveOptions = {},
+): SolveResult {
+  return search(start, cfg, budget, prunedOracle(bullets, cfg), opts);
+}
+
+/**
+ * 辺の安全判定を供給するもの。`solveExact` と `solve` の違いはここだけにある。
+ */
+interface SafetyOracle {
+  /** tick `t` の準備(弾の線分を作る・空間の索引を張る)。 */
+  begin(t: number): void;
+  /** 格子点 `(i, j)` から `to` への辺が、いま準備した tick で安全か。 */
+  safe(i: number, j: number, from: Vec2, to: Vec2): boolean;
+  /** `closestApproach` を呼んだ回数。 */
+  checks: number;
+}
+
+/** 全弾を舐める素朴な判定。これが正しさの基準になる。 */
+function exactOracle(bullets: readonly Bullet[], cfg: WorldConfig): SafetyOracle {
+  const need = cfg.shipRadius + cfg.bulletRadius + cfg.clearance;
+  let segs: readonly Segment[] = [];
+  return {
+    checks: 0,
+    begin(t) {
+      segs = bulletSegmentsAt(bullets, t);
+    },
+    safe(_i, _j, from, to) {
+      this.checks += segs.length;
+      return minApproachToSegments(from, to, segs) >= need;
+    },
+  };
+}
+
+/**
+ * 空間で絞り込んでから舐める判定。**近似ではない。**
+ *
+ * 相対運動の下界
+ *
+ * ```
+ * closestApproach(a0,a1,b0,b1) ≥ |a0 − b0| − |a1 − a0| − |b1 − b0|
+ * ```
+ *
+ * より、`|a0 − b0| ≥ need + VMAX + |Δb|` を満たす弾は最近接距離を `need` 未満に
+ * できない。したがってそれらを比較から外しても、**「安全か否か」の判定は変わらない**
+ * (最近接距離の**値**は変わりうるので、値が要る `validatePath` では使わない)。
+ *
+ * 半径は弾ごとに `need + VMAX + |Δb|` を採る。全弾の最大速度で一律に取ると、
+ * 速い弾が一つ混ざっただけで絞り込みが効かなくなる。
+ */
+function prunedOracle(bullets: readonly Bullet[], cfg: WorldConfig): SafetyOracle {
+  const n = cfg.gridN;
+  const s = gridSpacing(cfg);
+  const need = cfg.shipRadius + cfg.bulletRadius + cfg.clearance;
+  const lists: Segment[][] = Array.from({ length: n * n }, () => []);
+  return {
+    checks: 0,
+    begin(t) {
+      for (const l of lists) l.length = 0;
+      for (const b of bullets) {
+        if (!isActiveOverTick(b, t)) continue;
+        const [a, c] = bulletSegment(b, t);
+        const seg = { a, b: c };
+        const r = need + cfg.maxSpeed + dist(a, c);
+        const i0 = Math.max(0, Math.ceil((a.x - r) / s));
+        const i1 = Math.min(n - 1, Math.floor((a.x + r) / s));
+        const j0 = Math.max(0, Math.ceil((a.y - r) / s));
+        const j1 = Math.min(n - 1, Math.floor((a.y + r) / s));
+        for (let j = j0; j <= j1; j++) {
+          const dy = j * s - a.y;
+          for (let i = i0; i <= i1; i++) {
+            const dx = i * s - a.x;
+            if (dx * dx + dy * dy <= r * r) lists[j * n + i].push(seg);
+          }
+        }
+      }
+    },
+    safe(i, j, from, to) {
+      const near = lists[j * n + i];
+      this.checks += near.length;
+      return minApproachToSegments(from, to, near) >= need;
+    },
+  };
+}
+
+/** 層ごとの掃き出しと経路の復元。両実装で共有する。 */
+function search(
+  start: Vec2,
+  cfg: WorldConfig,
+  budget: number,
+  oracle: SafetyOracle,
+  opts: SolveOptions,
 ): SolveResult {
   const n = cfg.gridN;
   const cells = n * n;
   const s = gridSpacing(cfg);
-  const need = cfg.shipRadius + cfg.bulletRadius + cfg.clearance;
   const offsets = reachableOffsets(cfg);
 
   const si = Math.round(start.x / s);
@@ -104,15 +219,18 @@ export function solve(
   cur[sj * n + si] = 1;
   let edges = 0;
 
-  const exhaust = (): SolveResult => ({
+  const stop = (exhausted: boolean): SolveResult => ({
     solvable: false,
     path: null,
     edgesEvaluated: edges,
-    exhausted: true,
+    bulletChecks: oracle.checks,
+    exhausted,
   });
 
+  opts.onLayer?.(0, cur);
+
   for (let t = 0; t < cfg.ticks; t++) {
-    const segs = bulletSegmentsAt(bullets, t);
+    oracle.begin(t);
     const next = new Uint8Array(cells);
     let any = false;
 
@@ -129,10 +247,10 @@ export function solve(
         const nc = nj * n + ni;
         if (next[nc]) continue; // 先に着いた経路を使う(決定論・F-13)
 
-        if (edges >= budget) return exhaust();
+        if (edges >= budget) return stop(true);
         edges++;
 
-        if (minApproachToSegments(from, gridPoint(ni, nj, cfg), segs) >= need) {
+        if (oracle.safe(i, j, from, gridPoint(ni, nj, cfg))) {
           next[nc] = 1;
           parent[(t + 1) * cells + nc] = c;
           any = true;
@@ -143,9 +261,10 @@ export function solve(
     if (!any) {
       // どこへも進めない = この面は(この格子の上では)抜けられない。
       // 予算は余っているので、これは**証明された不可**である。
-      return { solvable: false, path: null, edgesEvaluated: edges, exhausted: false };
+      return stop(false);
     }
     cur = next;
+    opts.onLayer?.(t + 1, cur);
   }
 
   let end = -1;
@@ -155,10 +274,8 @@ export function solve(
       break;
     }
   }
-  /* c8 ignore next 3 -- 層が空なら上の !any で返っているので到達しない */
-  if (end < 0) {
-    return { solvable: false, path: null, edgesEvaluated: edges, exhausted: false };
-  }
+  /* c8 ignore next 1 -- 層が空なら上の !any で返っているので到達しない */
+  if (end < 0) return stop(false);
 
   const path: Vec2[] = new Array(cfg.ticks + 1);
   let c = end;
@@ -167,7 +284,13 @@ export function solve(
     path[t] = gridPoint(i, (c - i) / n, cfg);
     if (t > 0) c = parent[t * cells + c];
   }
-  return { solvable: true, path, edgesEvaluated: edges, exhausted: false };
+  return {
+    solvable: true,
+    path,
+    edgesEvaluated: edges,
+    bulletChecks: oracle.checks,
+    exhausted: false,
+  };
 }
 
 /**
