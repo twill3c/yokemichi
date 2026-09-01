@@ -14,8 +14,11 @@ export const WORLD: WorldConfig = {
   dt: 1 / 60,
   shipRadius: 0.012,
   bulletRadius: 0.01,
-  maxSpeed: 0.02,
-  ticks: 900,
+  // F-07a: 格子間隔 1/40 = 0.025 に対し、斜め(0.03536)まで届く値を採る。
+  // loop_001 の 0.02 では自分自身以外の格子点へ 1 tick で届かず、
+  // ソルバーの遷移が自己ループだけになっていた(loop_003 の SPEC-GAP)。
+  maxSpeed: 0.036,
+  ticks: 600,
   gridN: 41,
   clearance: 0.006,
 };

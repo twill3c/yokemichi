@@ -1,4 +1,4 @@
-import type { Bullet, Vec2, WorldConfig } from "./types";
+import type { Bullet, Segment, Vec2, WorldConfig } from "./types";
 import { add, dist, scale, sub } from "./vec";
 import { clampToWorld } from "./world";
 
@@ -52,4 +52,21 @@ export function isActiveOverTick(b: Bullet, t: number): boolean {
  */
 export function bulletSegment(b: Bullet, t: number): [Vec2, Vec2] {
   return [extrapolate(b, t), extrapolate(b, t + 1)];
+}
+
+/**
+ * tick `t` の区間に参加する弾の線分をまとめて作る(F-04)。
+ *
+ * ソルバーは同じ tick の中で何千という辺を調べるので、この計算を辺ごとに
+ * 繰り返さず一度だけ行う。**判定そのものは共有したまま、外に出せる計算だけを
+ * 外に出す**ための関数であり、意味は `bulletSegment` の繰り返しと同一である。
+ */
+export function bulletSegmentsAt(bullets: readonly Bullet[], t: number): Segment[] {
+  const segs: Segment[] = [];
+  for (const b of bullets) {
+    if (!isActiveOverTick(b, t)) continue;
+    const [a, c] = bulletSegment(b, t);
+    segs.push({ a, b: c });
+  }
+  return segs;
 }

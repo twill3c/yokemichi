@@ -1,5 +1,5 @@
-import { bulletSegment, isActiveOverTick } from "./motion";
-import type { Bullet, Vec2, WorldConfig } from "./types";
+import { bulletSegmentsAt } from "./motion";
+import type { Bullet, Segment, Vec2, WorldConfig } from "./types";
 import { dot, len, len2, sub } from "./vec";
 
 /**
@@ -38,11 +38,24 @@ export function minApproachDuringTick(
   bullets: readonly Bullet[],
   t: number,
 ): number {
+  return minApproachToSegments(shipFrom, shipTo, bulletSegmentsAt(bullets, t));
+}
+
+/**
+ * 線分集合に対する最近接距離の最小。
+ *
+ * ソルバーは同じ tick の中で何千もの辺を調べるので、弾の線分を作り直さずに
+ * ここへ渡す。**エンジンもソルバーもこの一つの関数を通る** ——
+ * 判定を二度書くと、証明された経路が実行できる根拠(SPEC §4)が崩れる。
+ */
+export function minApproachToSegments(
+  shipFrom: Vec2,
+  shipTo: Vec2,
+  segments: readonly Segment[],
+): number {
   let best = Infinity;
-  for (const b of bullets) {
-    if (!isActiveOverTick(b, t)) continue;
-    const [b0, b1] = bulletSegment(b, t);
-    const d = closestApproach(shipFrom, shipTo, b0, b1);
+  for (const s of segments) {
+    const d = closestApproach(shipFrom, shipTo, s.a, s.b);
     if (d < best) best = d;
   }
   return best;

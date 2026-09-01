@@ -23,6 +23,12 @@ export interface Bullet {
   readonly t1: number;
 }
 
+/** 1 tick のあいだに一点がたどる線分(F-04)。 */
+export interface Segment {
+  readonly a: Vec2;
+  readonly b: Vec2;
+}
+
 /** 世界の定数(F-01 / F-02 / F-07)。 */
 export interface WorldConfig {
   /** 1 tick の実時間(秒)。描画と入力の刻み。 */
