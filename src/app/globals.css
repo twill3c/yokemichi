@@ -1,0 +1,44 @@
+:root {
+  --bg: #0e1116;
+  --fg: #e6e9ef;
+  --muted: #8b94a3;
+  --accent: #7fd1c1;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui,
+    sans-serif;
+  /* F-11: ドラッグで機体を動かすので、ブラウザ既定のスクロール・選択を殺す */
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+}
+
+h1 {
+  font-size: 1.5rem;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.5rem;
+}
+
+.lede {
+  color: var(--muted);
+  line-height: 1.8;
+  margin: 0 0 1.5rem;
+}
