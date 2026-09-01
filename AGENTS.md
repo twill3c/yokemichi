@@ -56,6 +56,28 @@ looplog 記録の規範(HC-001):
 
 図・UI を触ったループでは、**実ブラウザで複数の画面幅で見る**ことを完了条件に加える(HC-041 / HC-078)。
 
+```bash
+# 1. 出荷物を作って配る
+cd c:/_ClaudeCode/yokemichi && npm run build
+node <scratchpad>/serve.mjs c:/_ClaudeCode/yokemichi/out 4173 &
+
+# 2. playwright を持つ姉妹プロジェクトへ検品器を複製して走らせる
+#    (ESM の解決はファイルの位置で決まるので、ルートからは動かない)
+cp c:/_ClaudeCode/harness-data/yokemichi_check.mjs c:/_ClaudeCode/hanshoku-atlas/
+cd c:/_ClaudeCode/hanshoku-atlas && node yokemichi_check.mjs http://127.0.0.1:4173/ C:/tmp/yokemichi_shots
+rm c:/_ClaudeCode/hanshoku-atlas/yokemichi_check.mjs   # 借りた側を汚さない
+```
+
+検品器は 390 / 768 / 1280 px で、盤面が正方形か・横に溢れていないか・自機と弾が
+実際に描かれているか・**避け道を ON にすると線の画素が増えるか**・
+**放置すると必ず被弾するか**(F-06a の実地確認)を見て、異常があれば exit 1 で落ちる。
+
+**「避け道の線が出ている」を画素数 > 0 で見てはならない。**自機のリングが同じ差し色なので、
+線が一本も描かれていなくても緑になる —— loop_006 で実際に偽の合格を出した。
+必ず **OFF のときとの差**で見る。そして**撮った絵は必ず目で見る**:
+上下が反転していたのも、避け道が半秒で消えていたのも、画素の計数ではなく
+スクリーンショットを開いて分かった。
+
 <!-- scaffold:block agents_core v1.24.0 -->
 ## 共通規律(scaffold 管理領域 — 手動編集禁止)
 

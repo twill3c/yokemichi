@@ -165,7 +165,7 @@ describe("T-040(F-06, F-08, F-13): 生成器", () => {
   const c = testCfg({ ticks: 60 });
 
   it("面が返り、証明経路が不変量を満たす", () => {
-    const lv = generateLevel(DIFFICULTY.normal, 1234, c, 40);
+    const lv = generateLevel(DIFFICULTY.hard, 1234, c, 40).level;
     expect(lv).not.toBeNull();
     expect(lv!.path).toHaveLength(c.ticks + 1);
     expect(lv!.path[0]).toEqual(defaultStart(c));
@@ -174,14 +174,14 @@ describe("T-040(F-06, F-08, F-13): 生成器", () => {
   });
 
   it("同一シードは同一の面(スクリプト・弾・経路すべて)", () => {
-    const a = generateLevel(DIFFICULTY.normal, 99, c, 40);
-    const b = generateLevel(DIFFICULTY.normal, 99, c, 40);
+    const a = generateLevel(DIFFICULTY.hard, 99, c, 40);
+    const b = generateLevel(DIFFICULTY.hard, 99, c, 40);
     expect(b).toEqual(a);
   });
 
   it("別シードは別の面(生成が種に依っていることの確認)", () => {
-    const a = generateLevel(DIFFICULTY.normal, 99, c, 40);
-    const b = generateLevel(DIFFICULTY.normal, 100, c, 40);
+    const a = generateLevel(DIFFICULTY.hard, 99, c, 40).level;
+    const b = generateLevel(DIFFICULTY.hard, 100, c, 40).level;
     expect(b!.script).not.toEqual(a!.script);
   });
 });
@@ -189,7 +189,7 @@ describe("T-040(F-06, F-08, F-13): 生成器", () => {
 describe("T-041(F-06, N-02): 試行上限", () => {
   it("試行 0 なら明示的に失敗を返す", () => {
     const c = testCfg();
-    expect(generateLevel(DIFFICULTY.normal, 1, c, 0)).toBeNull();
+    expect(generateLevel(DIFFICULTY.normal, 1, c, 0).level).toBeNull();
   });
 });
 
@@ -198,7 +198,7 @@ describe("T-042(F-09, HC-065): 再生検証", () => {
 
   it("証明経路を運動モデルで実行すると、生存し、点列まで一致する", () => {
     for (const seed of [1, 2, 3, 4, 5]) {
-      const lv = generateLevel(DIFFICULTY.normal, seed, c, 60);
+      const lv = generateLevel(DIFFICULTY.hard, seed, c, 60).level;
       expect(lv).not.toBeNull();
       const r = replay(lv!.path, lv!.bullets, c);
       expect(r.survived).toBe(true);
@@ -217,7 +217,7 @@ describe("T-043(F-06a, F-09): 陽性対照 — 再生器は本当に被弾を見
 
   it("開始点に留まる経路は必ず被弾する(非自明性ゲートが保証する前提)", () => {
     for (const seed of [1, 2, 3, 4, 5]) {
-      const lv = generateLevel(DIFFICULTY.normal, seed, c, 60);
+      const lv = generateLevel(DIFFICULTY.hard, seed, c, 60).level;
       const still = new Array(c.ticks + 1).fill(defaultStart(c));
       const r = replay(still, lv!.bullets, c);
       // これが survived=true になるなら、その面は「じっとしていれば抜けられる」
@@ -237,9 +237,9 @@ describe("T-043(F-06a, F-09): 陽性対照 — 再生器は本当に被弾を見
     // (実測 2026-09-02: 平均 2.4 試行)。
     let trivial = 0;
     for (let seed = 1; seed <= 12; seed++) {
-      const lv = generateLevel(DIFFICULTY.normal, seed, c, 60);
-      expect(lv).not.toBeNull();
-      trivial += lv!.rejections.trivial;
+      const g = generateLevel(DIFFICULTY.normal, seed, c, 60);
+      expect(g.level).not.toBeNull();
+      trivial += g.rejections.trivial;
     }
     expect(trivial).toBeGreaterThan(0);
   });
@@ -257,11 +257,9 @@ describe("T-044(F-08): 生成器が「解けない面」を弾く経路を実際
     let unsolvable = 0;
     let produced = 0;
     for (let seed = 1; seed <= 6; seed++) {
-      const lv = generateLevel(brutal, seed, c, 25);
-      if (lv) {
-        produced++;
-        unsolvable += lv.rejections.unsolvable;
-      }
+      const g = generateLevel(brutal, seed, c, 25);
+      if (g.level) produced++;
+      unsolvable += g.rejections.unsolvable;
     }
     // ここが 0 なら、生成器は「解けない面を捨てる」経路を一度も通っていない
     expect(unsolvable).toBeGreaterThan(0);

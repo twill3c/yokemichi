@@ -1,8 +1,10 @@
 :root {
   --bg: #0e1116;
+  --panel: #151a22;
   --fg: #e6e9ef;
   --muted: #8b94a3;
   --accent: #7fd1c1;
+  --line: #232a36;
   color-scheme: dark;
 }
 
@@ -26,19 +28,132 @@ body {
 }
 
 main {
-  max-width: 44rem;
+  max-width: 34rem;
   margin: 0 auto;
-  padding: 2rem 1.25rem;
+  padding: 1.5rem 1rem 2rem;
 }
 
 h1 {
-  font-size: 1.5rem;
-  letter-spacing: 0.08em;
-  margin: 0 0 0.5rem;
+  font-size: 1.4rem;
+  letter-spacing: 0.12em;
+  margin: 0 0 0.4rem;
 }
 
 .lede {
   color: var(--muted);
-  line-height: 1.8;
-  margin: 0 0 1.5rem;
+  font-size: 0.86rem;
+  line-height: 1.85;
+  margin: 0 0 1.1rem;
+}
+
+.lede strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* 盤面は常に正方形。幅に追随させ、縦にも収める */
+.board {
+  position: relative;
+  width: 100%;
+  max-width: min(100%, 68vh);
+  margin: 0 auto;
+  aspect-ratio: 1 / 1;
+}
+
+.canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 0.5rem;
+  background: #0b0e13;
+  /* 指のドラッグをブラウザのスクロールに取られない */
+  touch-action: none;
+}
+
+.veil {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 14, 19, 0.72);
+  border-radius: 0.5rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 1rem;
+}
+
+.hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.1rem;
+  justify-content: center;
+  margin: 0.75rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.stat b {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.group {
+  display: flex;
+  gap: 0.35rem;
+}
+
+button {
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--fg);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  /* 押しやすさ(指で扱う) */
+  min-height: 2.4rem;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button.on {
+  color: #0b0e13;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.again {
+  background: var(--accent);
+  color: #0b0e13;
+  font-weight: 600;
+  border-color: var(--accent);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.9;
+  margin: 1rem 0 0;
+  text-align: center;
+}
+
+.hint strong {
+  color: var(--fg);
+  font-weight: 600;
 }

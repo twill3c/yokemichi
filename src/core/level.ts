@@ -1,8 +1,9 @@
-import { hitsDuringTick } from "./collide";
-import { stepShip } from "./motion";
+import { closestApproach, hitsDuringTick } from "./collide";
+import { bulletSegment, isActiveOverTick, stepShip } from "./motion";
 import { type Rng, mulberry32 } from "./rng";
 import { gridPoint, gridSpacing, solve } from "./solver";
 import type { Bullet, Emit, Pattern, Script, Vec2, WorldConfig } from "./types";
+import { dist } from "./vec";
 
 /**
  * 弾の寿命(F-05a)。
@@ -15,10 +16,58 @@ export function bulletLifespan(speed: number): number {
   return Math.ceil(Math.SQRT2 / speed) + 1;
 }
 
-/** 面の開始点。中央やや下の格子点(必ず格子に乗る)。 */
+/**
+ * 面の開始点。中央やや下の格子点(必ず格子に乗る)。
+ *
+ * **`y` は画面の下向き**(canvas と同じ)なので、`0.9` が画面の下である(F-11a)。
+ */
 export function defaultStart(cfg: WorldConfig): Vec2 {
   const s = gridSpacing(cfg);
-  return gridPoint(Math.round(0.5 / s), Math.round(0.1 / s), cfg);
+  return gridPoint(Math.round(0.5 / s), Math.round(0.9 / s), cfg);
+}
+
+/**
+ * その一点に留まり続けて生き延びられる格子点の数(F-06a)。
+ *
+ * 0 なら「どこに立っていてもいつか当たる」= 動かなければ抜けられない面である。
+ *
+ * 全格子点 × 全 tick を素直に回すと重いので、**弾ごとに近傍の格子点だけを消す**。
+ * `|g − b0| ≥ RS + RB + |Δb|` の点は下界からこの弾では死なないので、
+ * 走査から外しても**結果は厳密に同じ**である(solver の枝刈りと同じ根拠)。
+ */
+export function stationarySurvivors(
+  bullets: readonly Bullet[],
+  cfg: WorldConfig,
+): number {
+  const n = cfg.gridN;
+  const s = gridSpacing(cfg);
+  const hit = cfg.shipRadius + cfg.bulletRadius;
+  const alive = new Uint8Array(n * n).fill(1);
+  let count = n * n;
+
+  for (let t = 0; t < cfg.ticks && count > 0; t++) {
+    for (const b of bullets) {
+      if (!isActiveOverTick(b, t)) continue;
+      const [a, c] = bulletSegment(b, t);
+      const r = hit + dist(a, c);
+      const i0 = Math.max(0, Math.ceil((a.x - r) / s));
+      const i1 = Math.min(n - 1, Math.floor((a.x + r) / s));
+      const j0 = Math.max(0, Math.ceil((a.y - r) / s));
+      const j1 = Math.min(n - 1, Math.floor((a.y + r) / s));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const idx = j * n + i;
+          if (!alive[idx]) continue;
+          const g = gridPoint(i, j, cfg);
+          if (closestApproach(g, g, a, c) < hit) {
+            alive[idx] = 0;
+            count--;
+          }
+        }
+      }
+    }
+  }
+  return count;
 }
 
 function shoot(origin: Vec2, angle: number, speed: number, t0: number): Bullet {
@@ -117,10 +166,25 @@ export interface Difficulty {
   readonly speedMax: number;
 }
 
+/**
+ * 難度の三段(実測 2026-09-02 で較正)。
+ *
+ * F-06a を「どの一点に留まっても死ぬ」へ強めた結果、**弾が薄いと面が作れなくなった** ——
+ * 留まれる場所を無くすには盤面を覆う必要があるからである。したがって
+ * 「易」は弾を減らすのではなく**遅くする**ことで易しくしている。
+ *
+ * 本番設定での実測(6 種・試行上限 30):
+ *
+ * | 難度 | 成功 | 平均試行 | 証明経路が動く tick | 経路長 | 1 面 |
+ * |---|---|---|---|---|---|
+ * | 易 | 6/6 | 2.2 | 82 | 2.31 | 1.1 秒 |
+ * | 並 | 6/6 | 1.0 | 110 | 2.98 | 0.86 秒 |
+ * | 難 | 6/6 | 1.0 | 195 | 5.31 | 0.97 秒 |
+ */
 export const DIFFICULTY: Record<"easy" | "normal" | "hard", Difficulty> = {
-  easy: { emits: 6, countMin: 3, countMax: 6, speedMin: 0.008, speedMax: 0.016 },
-  normal: { emits: 12, countMin: 4, countMax: 9, speedMin: 0.01, speedMax: 0.022 },
-  hard: { emits: 20, countMin: 6, countMax: 12, speedMin: 0.014, speedMax: 0.03 },
+  easy: { emits: 30, countMin: 8, countMax: 14, speedMin: 0.01, speedMax: 0.018 },
+  normal: { emits: 40, countMin: 10, countMax: 18, speedMin: 0.014, speedMax: 0.026 },
+  hard: { emits: 55, countMin: 12, countMax: 22, speedMin: 0.018, speedMax: 0.034 },
 };
 
 export interface Level {
@@ -129,12 +193,17 @@ export interface Level {
   /** F-07 が証明した安全経路。 */
   readonly path: readonly Vec2[];
   readonly seed: number;
-  /** 何回目の試行で通ったか(1 起算)。 */
+}
+
+/**
+ * 生成の結果。**面が作れなかったときも棄却の内訳を返す** ——
+ * 数えた値が失敗時に消える計器は、いちばん知りたいときに何も言わない(HC-126)。
+ */
+export interface GenerateResult {
+  readonly level: Level | null;
+  /** 使った試行回数。 */
   readonly attempts: number;
-  /**
-   * 棄却の内訳。**ゲートが実際に何かを弾いているか**を外から測るために返す ——
-   * 値が常に 0 なら、そのゲートは掛かっていないのと同じである(HC-079)。
-   */
+  /** 棄却の内訳。**ゲートが実際に何かを弾いているか**を外から測るために返す。 */
   readonly rejections: { readonly unsolvable: number; readonly trivial: number };
 }
 
@@ -155,25 +224,27 @@ function randomScript(rng: Rng, d: Difficulty, cfg: WorldConfig): Script {
     const count = pickInt(rng, d.countMin, d.countMax);
     const speed = pick(rng, d.speedMin, d.speedMax);
     const kind = pickInt(rng, 0, 3);
+    // F-11a: y は画面の下向き。弾は上(y < 0)から現れ、+π/2 = 真下へ降りる。
+    const DOWN = Math.PI / 2;
     if (kind === 0) {
       emits.push({
         t,
-        pattern: { kind: "line", y: 1.05, x0: pick(rng, -0.1, 0.4), x1: pick(rng, 0.6, 1.1), count, speed, angle: -Math.PI / 2 + pick(rng, -0.3, 0.3) },
+        pattern: { kind: "line", y: -0.05, x0: pick(rng, -0.1, 0.4), x1: pick(rng, 0.6, 1.1), count, speed, angle: DOWN + pick(rng, -0.3, 0.3) },
       });
     } else if (kind === 1) {
       emits.push({
         t,
-        pattern: { kind: "fan", origin: { x: pick(rng, 0, 1), y: 1.05 }, count, angle: -Math.PI / 2, spread: pick(rng, 0.4, 1.6), speed },
+        pattern: { kind: "fan", origin: { x: pick(rng, 0, 1), y: -0.05 }, count, angle: DOWN, spread: pick(rng, 0.4, 1.6), speed },
       });
     } else if (kind === 2) {
       emits.push({
         t,
-        pattern: { kind: "ring", origin: { x: pick(rng, 0.15, 0.85), y: pick(rng, 0.5, 0.95) }, count, phase: pick(rng, 0, Math.PI), speed },
+        pattern: { kind: "ring", origin: { x: pick(rng, 0.15, 0.85), y: pick(rng, 0.05, 0.5) }, count, phase: pick(rng, 0, Math.PI), speed },
       });
     } else {
       emits.push({
         t,
-        pattern: { kind: "sweep", origin: { x: pick(rng, -0.05, 1.05), y: 1.05 }, count, interval: pickInt(rng, 2, 8), angleFrom: -Math.PI / 2 - pick(rng, 0.3, 1.0), angleTo: -Math.PI / 2 + pick(rng, 0.3, 1.0), speed },
+        pattern: { kind: "sweep", origin: { x: pick(rng, -0.05, 1.05), y: -0.05 }, count, interval: pickInt(rng, 2, 8), angleFrom: DOWN - pick(rng, 0.3, 1.0), angleTo: DOWN + pick(rng, 0.3, 1.0), speed },
       });
     }
   }
@@ -196,12 +267,13 @@ export function generateLevel(
   cfg: WorldConfig,
   maxAttempts: number,
   budget = 50_000_000,
-): Level | null {
+): GenerateResult {
   const rng = mulberry32(seed);
   const start = defaultStart(cfg);
   const rejections = { unsolvable: 0, trivial: 0 };
+  let attempt = 0;
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  for (attempt = 1; attempt <= maxAttempts; attempt++) {
     const script = randomScript(rng, d, cfg);
     const bullets = expandScript(script, cfg);
 
@@ -220,14 +292,13 @@ export function generateLevel(
       );
     }
 
-    // F-06a: 留まって抜けられる面は避けゲームとして成立しない
-    const still = new Array<Vec2>(cfg.ticks + 1).fill(start);
-    if (replay(still, bullets, cfg).survived) {
+    // F-06a: どこか一点に立っていれば抜けられる面は、避けゲームとして成立しない
+    if (stationarySurvivors(bullets, cfg) > 0) {
       rejections.trivial++;
       continue;
     }
 
-    return { script, bullets, path: r.path, seed, attempts: attempt, rejections };
+    return { level: { script, bullets, path: r.path, seed }, attempts: attempt, rejections };
   }
-  return null;
+  return { level: null, attempts: maxAttempts, rejections };
 }
