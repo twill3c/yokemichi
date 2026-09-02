@@ -7,6 +7,7 @@ import { DIFFICULTY, type Difficulty, type Level, generateLevel } from "@/core/l
 import { type Session, createSession, ghostAhead, stepSession } from "@/core/session";
 import type { Vec2 } from "@/core/types";
 import { WORLD } from "@/core/world";
+import { type Records, loadRecords, submitRecord } from "@/lib/records";
 
 const LEVELS: { key: keyof typeof DIFFICULTY; label: string }[] = [
   { key: "easy", label: "易" },
@@ -83,6 +84,28 @@ export default function Game() {
   const [showGhost, setShowGhost] = useState(false); // F-12: 既定は OFF
   const [status, setStatus] = useState<Session["status"]>("playing");
   const [tick, setTick] = useState(0);
+  const [records, setRecords] = useState<Records>({});
+  const recordedRef = useRef(false);
+
+  // 記録は初回描画の後に読む(サーバ側に localStorage は無い)
+  useEffect(() => {
+    try {
+      setRecords(loadRecords(window.localStorage));
+    } catch {
+      /* 読めない環境では空のまま */
+    }
+  }, []);
+
+  // 面が終わったら記録を出す。1 面につき一度だけ。
+  useEffect(() => {
+    if (status === "playing" || recordedRef.current) return;
+    recordedRef.current = true;
+    try {
+      setRecords(submitRecord(window.localStorage, difficulty, tick));
+    } catch {
+      /* 保存できなくても遊びは続く */
+    }
+  }, [status, tick, difficulty]);
 
   // 面を作る。生成は 1 秒弱かかるので、先に「支度中」を描かせてから回す(N-06)。
   useEffect(() => {
@@ -104,6 +127,7 @@ export default function Game() {
     const s0 = createSession(level, WORLD);
     sessionRef.current = s0;
     targetRef.current = null;
+    recordedRef.current = false;
     setStatus(s0.status);
     setTick(0);
 
@@ -210,6 +234,11 @@ export default function Game() {
         {level && (
           <span className="stat">
             試行 <b>{attempts}</b>
+          </span>
+        )}
+        {records[difficulty] !== undefined && (
+          <span className="stat">
+            最良 <b>{(records[difficulty]! * WORLD.dt).toFixed(1)}</b> 秒
           </span>
         )}
       </div>

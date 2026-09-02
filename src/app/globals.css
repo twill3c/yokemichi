@@ -157,3 +157,65 @@ button.on {
   color: var(--fg);
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------- fleet: fixed footer */
+.site-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+  font-size: 0.72rem;
+  color: var(--muted);
+  z-index: 20;
+}
+
+.site-footer__inner {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 0.5rem 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.7rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.site-footer__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.site-footer a {
+  color: var(--muted);
+}
+
+.site-footer a:hover {
+  color: var(--accent);
+}
+
+.site-footer__copy {
+  margin-left: -0.35rem;
+}
+
+/* fleet: フッタ区切り。規約の並びの「・」。CSS の ::before で描くと innerText に
+   出ず検品器から見えないので、文字として置いてある。ここでは色と詰めだけ。 */
+.fsep {
+  color: currentColor;
+  opacity: 0.45;
+  margin: 0 -0.35rem;
+  user-select: none;
+}
+
+/* フッタは狭い幅で折り返して高くなる。逃げは実測より広く取る(HC 済みの罠) */
+body {
+  padding-bottom: 4rem;
+}
+
+@media (max-width: 34rem) {
+  body {
+    padding-bottom: 7.5rem;
+  }
+}
