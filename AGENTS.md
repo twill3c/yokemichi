@@ -59,7 +59,7 @@ looplog 記録の規範(HC-001):
 ```bash
 # 1. 出荷物を作って配る
 cd c:/_ClaudeCode/yokemichi && npm run build
-node <scratchpad>/serve.mjs c:/_ClaudeCode/yokemichi/out 4173 &
+node c:/_ClaudeCode/harness-data/serve_static.mjs c:/_ClaudeCode/yokemichi/out 4173 &
 
 # 2. playwright を持つ姉妹プロジェクトへ検品器を複製して走らせる
 #    (ESM の解決はファイルの位置で決まるので、ルートからは動かない)
